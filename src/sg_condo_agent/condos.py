@@ -51,6 +51,21 @@ REGISTRY: dict[str, Condo] = {
         top_year=2022,
         units=1410,
     ),
+    "parktown": Condo(
+        key="parktown",
+        name="Parktown Residence",
+        ura_project_name="PARKTOWN RESIDENCE",
+        # edgeprop_asset_id: fill in after grabbing it from the EdgeProp
+        # project page URL (it appears as /m_<id> in the address bar).
+        edgeprop_asset_id=None,
+        edgeprop_slug="Parktown-Residence",
+        squarefoot_slug=None,
+        location="Tampines Street 62",
+        district="D18",
+        tenure="99-yr from 2023",
+        top_year=None,  # not yet TOP (launched 2025)
+        units=1193,
+    ),
 }
 
 

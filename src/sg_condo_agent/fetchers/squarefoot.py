@@ -4,10 +4,11 @@ from datetime import date, datetime
 import requests
 from bs4 import BeautifulSoup
 
+from ..condos import Condo
 from ..models import Trade
 from .csv_source import _infer_unit_type
 
-PROJECT_URL = "https://www.squarefoot.com.sg/private-property/florence-residences-singapore"
+PROJECT_URL_BASE = "https://www.squarefoot.com.sg/private-property/"
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -66,7 +67,13 @@ def parse_squarefoot_html(html: str) -> list[Trade]:
     return out
 
 
-def fetch_squarefoot() -> list[Trade]:
-    r = requests.get(PROJECT_URL, headers=HEADERS, timeout=20)
+def fetch_squarefoot(condo: Condo) -> list[Trade]:
+    if not condo.squarefoot_slug:
+        raise RuntimeError(
+            f"condo '{condo.key}' has no squarefoot_slug — register one in condos.py "
+            f"or use a different --source."
+        )
+    url = f"{PROJECT_URL_BASE}{condo.squarefoot_slug}"
+    r = requests.get(url, headers=HEADERS, timeout=20)
     r.raise_for_status()
     return parse_squarefoot_html(r.text)

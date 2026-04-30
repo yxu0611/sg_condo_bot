@@ -1,9 +1,13 @@
-# Florence Residences Transaction Agent
+# sg-condo-agent
 
-Fetches transaction history for **The Florence Residences** (Hougang Ave 2,
-D19, 99-yr from 2018, TOP 2022, 1,410 units), classifies each sale as
-profit / loss / breakeven by pairing same-unit historical trades, and emits
-either a static HTML report or an interactive Gradio app.
+A reusable Singapore-condo transaction explorer. Pick a project (by short
+key like `florence` or any free-form URA project name), pull recent sale
+transactions from EdgeProp / URA / SquareFoot / a URA REALIS CSV, classify
+each Resale / Sub-Sale as profit / loss / breakeven by FIFO-pairing same-unit
+trades, and render either a static HTML report or an interactive Gradio app.
+
+> Originally built for The Florence Residences; generalised into a per-condo
+> registry so any project can be added with a few config lines.
 
 ## Features
 
@@ -13,9 +17,11 @@ either a static HTML report or an interactive Gradio app.
   unit type)` heuristic. FIFO matches each Resale / Sub-Sale against the
   earliest unused prior trade in the same physical unit.
 - **Two outputs**:
-  - `florence-agent` → one-shot static `florence.html` report.
-  - `florence-share` → interactive Gradio app with KPIs, scatter chart,
-    filterable trade table, and a sharable public link.
+  - `sg-condo-agent` → one-shot static `<condo>.html` report.
+  - `sg-condo-share` → interactive Gradio app with KPIs, scatter chart and a
+    filterable trade table.
+- **Per-condo config registry** in `condos.py` — add a new condo by
+  registering its URA project name, EdgeProp asset id, SquareFoot slug, etc.
 - **Gross P/L** — does *not* deduct BSD / ABSD / SSD / agent / legal fees.
 
 ## Install
@@ -32,41 +38,70 @@ Requires Python 3.11+.
 ### Static HTML report
 
 ```bash
-florence-agent --source auto --out florence.html
-# or pin a specific source:
-florence-agent --source csv --csv ./my_ura_export.csv
-florence-agent --source edgeprop
-florence-agent --source squarefoot
-florence-agent --source ura
+# Registered condo (key from condos.py REGISTRY):
+sg-condo-agent --condo florence
+
+# Pin a specific source:
+sg-condo-agent --condo florence --source csv --csv ./my_ura_export.csv
+sg-condo-agent --condo florence --source edgeprop
+sg-condo-agent --condo florence --source ura
+sg-condo-agent --condo florence --source squarefoot
+
+# Ad-hoc by name (URA / CSV sources will work; EdgeProp / SquareFoot need
+# slugs registered in condos.py):
+sg-condo-agent --condo "Treasure At Tampines" --source ura
 ```
 
-`--source auto` tries: `edgeprop → csv → squarefoot → ura` (csv is skipped
-unless `--csv` is given). Open the resulting `florence.html` in any browser.
+`--source auto` tries: `edgeprop → csv → squarefoot → ura`, skipping any
+sources the chosen condo lacks configuration for. Output defaults to
+`<condo-key>.html`; override with `--out`.
 
 ### Interactive Gradio app
 
 ```bash
-florence-share
+sg-condo-share --condo florence
+sg-condo-share --condo florence --share          # public Gradio link
+sg-condo-share --condo "Treasure At Tampines" --source ura
 ```
 
-Launches on `0.0.0.0` with `share=True` so a public Gradio link is printed.
+### Add a new condo
+
+Edit `src/sg_condo_agent/condos.py` and append a `Condo(...)` entry to
+`REGISTRY`. The minimum needed for URA / CSV is `ura_project_name`. To enable
+EdgeProp also set `edgeprop_asset_id` (and ideally `edgeprop_slug`); for
+SquareFoot set `squarefoot_slug`.
+
+```python
+"treasure": Condo(
+    key="treasure",
+    name="Treasure At Tampines",
+    ura_project_name="TREASURE AT TAMPINES",
+    location="Tampines Lane",
+    district="D18",
+    tenure="99-yr from 2018",
+    top_year=2023,
+    units=2203,
+),
+```
 
 ## Project layout
 
 ```
-src/florence_agent/
+src/sg_condo_agent/
   cli.py            # static HTML CLI entrypoint
   app.py            # Gradio interactive app
+  condos.py         # Condo dataclass + REGISTRY
   models.py         # Trade dataclass + pair_key
   pairing.py        # FIFO same-unit profit classifier
   render.py         # HTML report renderer
   template.html     # report template
   fetchers/
+    __init__.py     # fetch(condo, source) orchestrator
     edgeprop.py     # EdgeProp scraper (URA-sourced)
     squarefoot.py   # SquareFoot scraper
     ura.py          # URA REALIS API
     csv_source.py   # URA REALIS CSV loader
-tests/              # pytest suite for each fetcher + pairing + render
+tests/              # pytest suite
 docs/               # design spec & plan
 ```
 
@@ -80,14 +115,14 @@ pytest -v
 
 - P/L is **gross**. Net profit is typically ~10–15% lower after stamp duty,
   agent commission, and legal fees (depends on holder type and holding period).
-- Trades labeled `no_prior` are usually developer New Sale records with no
+- Trades labelled `no_prior` are usually developer New Sale records with no
   later resale yet — not missing data.
 - This report is informational, not investment advice.
 
 ## Data sources
 
 - [EdgeProp](https://www.edgeprop.sg/) — primary source (its underlying data
-  comes from URA REALIS); project asset_id `291412`.
+  comes from URA REALIS); needs the project's `asset_id`.
 - [URA REALIS](https://www.ura.gov.sg/realis) — official Singapore land
   authority transactions database.
 - [SquareFoot](https://www.squarefoot.com.sg/) — fallback HTML source.

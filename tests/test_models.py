@@ -1,5 +1,5 @@
 from datetime import date
-from florence_agent.models import Trade
+from sg_condo_agent.models import Trade
 
 
 def test_trade_psf_computed():

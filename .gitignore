@@ -4,8 +4,8 @@ __pycache__/
 .pytest_cache/
 build/
 dist/
-florence.html
-.edgeprop_cache.json
+*.html
+.edgeprop_cache_*.json
 ResidentialTransaction*.csv
 .DS_Store
 .claude/

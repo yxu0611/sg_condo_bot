@@ -1,7 +1,7 @@
 [project]
-name = "florence-agent"
-version = "0.1.0"
-description = "Florence Residences (SG) transaction explorer"
+name = "sg-condo-agent"
+version = "0.2.0"
+description = "Singapore condo transaction explorer — pulls from EdgeProp / URA / SquareFoot / CSV and emits a profit/loss report"
 requires-python = ">=3.11"
 dependencies = [
   "requests>=2.31",
@@ -15,8 +15,8 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-florence-agent = "florence_agent.cli:main"
-florence-share = "florence_agent.app:main"
+sg-condo-agent = "sg_condo_agent.cli:main"
+sg-condo-share = "sg_condo_agent.app:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-florence_agent = ["template.html"]
+sg_condo_agent = ["template.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

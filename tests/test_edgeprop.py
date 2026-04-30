@@ -1,6 +1,6 @@
 from datetime import date
 
-from florence_agent.fetchers.edgeprop import parse_edgeprop_response
+from sg_condo_agent.fetchers.edgeprop import parse_edgeprop_response
 
 
 SAMPLE = [

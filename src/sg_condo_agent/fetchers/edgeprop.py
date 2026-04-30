@@ -20,15 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..condos import Condo
 from ..models import Trade
 from .csv_source import _infer_unit_type
 
-ASSET_ID = 291412  # The Florence Residences
 ENDPOINT = "https://www.edgeprop.sg/index.php"
-PROJECT_REFERER = (
-    "https://www.edgeprop.sg/listing/apartment-condo/condominium/"
-    "The-Florence-Residences/m_2156876"
-)
+PROJECT_REFERER_BASE = "https://www.edgeprop.sg/listing/apartment-condo/condominium/"
 PAGE_LIMIT = 200
 REQUEST_DELAY_SEC = 0.4  # be polite
 
@@ -47,10 +44,16 @@ def _load_cookie() -> str:
     return text
 
 
-def _request_page(page: int, limit: int, cookie: str) -> dict:
+def _request_page(condo: Condo, page: int, limit: int, cookie: str) -> dict:
+    if not condo.edgeprop_asset_id:
+        raise RuntimeError(
+            f"condo '{condo.key}' has no edgeprop_asset_id — register one in condos.py "
+            f"or use a different --source."
+        )
+    referer = f"{PROJECT_REFERER_BASE}{condo.edgeprop_slug}" if condo.edgeprop_slug else PROJECT_REFERER_BASE
     qs = (
         f"option=com_mobile&task=tx&op=data&listing_type=sale"
-        f"&assetid={ASSET_ID}&page={page}&limit={limit}"
+        f"&assetid={condo.edgeprop_asset_id}&page={page}&limit={limit}"
     )
     req = urllib.request.Request(
         f"{ENDPOINT}?{qs}",
@@ -62,7 +65,7 @@ def _request_page(page: int, limit: int, cookie: str) -> dict:
             ),
             "Accept": "*/*",
             "Cookie": cookie,
-            "Referer": PROJECT_REFERER,
+            "Referer": referer,
             "X-Requested-With": "XMLHttpRequest",
         },
     )
@@ -140,16 +143,22 @@ def parse_edgeprop_response(rows: list[dict]) -> list[Trade]:
 
 
 def fetch_edgeprop(
+    condo: Condo,
     cache_path: Optional[Path | str] = None,
     *,
     force: bool = False,
 ) -> list[Trade]:
-    """Fetch all transactions, paginating until exhausted.
+    """Fetch all transactions for ``condo``, paginating until exhausted.
 
     Caches the parsed JSON pages to ``cache_path`` (default
-    ``./.edgeprop_cache.json``) so subsequent runs are free unless ``force``.
+    ``./.edgeprop_cache_<condo.key>.json``) so subsequent runs are free
+    unless ``force``.
     """
-    cache_path = Path(cache_path) if cache_path else Path(".edgeprop_cache.json")
+    cache_path = (
+        Path(cache_path)
+        if cache_path
+        else Path(f".edgeprop_cache_{condo.key}.json")
+    )
     if cache_path.exists() and not force:
         rows = json.loads(cache_path.read_text())
         return parse_edgeprop_response(rows)
@@ -159,7 +168,7 @@ def fetch_edgeprop(
     page = 1
     total: Optional[int] = None
     while True:
-        payload = _request_page(page, PAGE_LIMIT, cookie)
+        payload = _request_page(condo, page, PAGE_LIMIT, cookie)
         if payload.get("status") != 1:
             raise RuntimeError(f"edgeprop returned status={payload.get('status')}")
         rows = payload.get("response") or []

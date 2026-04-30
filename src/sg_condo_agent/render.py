@@ -3,7 +3,9 @@ from datetime import datetime
 from importlib.resources import files
 from statistics import median
 from string import Template
+from typing import Optional
 
+from .condos import Condo
 from .pairing import Classified
 
 
@@ -31,7 +33,12 @@ def _row_dict(c: Classified) -> dict:
     }
 
 
-def render_html(classified: list[Classified], *, source: str) -> str:
+def render_html(
+    classified: list[Classified],
+    *,
+    source: str,
+    condo: Optional[Condo] = None,
+) -> str:
     rows = [_row_dict(c) for c in classified]
     pls = [r["gross_profit"] for r in rows if r["gross_profit"] is not None]
     psfs = [r["psf"] for r in rows]
@@ -40,9 +47,13 @@ def render_html(classified: list[Classified], *, source: str) -> str:
     for r in rows:
         counts[r["status"]] += 1
 
-    tpl_text = (files("florence_agent") / "template.html").read_text(encoding="utf-8")
+    tpl_text = (files("sg_condo_agent") / "template.html").read_text(encoding="utf-8")
     tpl = Template(tpl_text)
+    name = condo.name if condo else "SG Condo"
+    subtitle = condo.subtitle if condo else ""
     return tpl.safe_substitute(
+        condo_name=name,
+        condo_subtitle=subtitle,
         source=source,
         generated=datetime.now().strftime("%Y-%m-%d %H:%M"),
         count=len(rows),

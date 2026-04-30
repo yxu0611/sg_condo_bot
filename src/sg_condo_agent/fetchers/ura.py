@@ -1,8 +1,10 @@
 import re
 from datetime import date, datetime
+from typing import Optional
 
 import requests
 
+from ..condos import Condo
 from ..models import Trade
 from .csv_source import _infer_unit_type
 
@@ -30,17 +32,22 @@ def _parse_date(s: str) -> date:
     raise ValueError(f"unparsed URA date: {s!r}")
 
 
-def parse_ura_json(payload: dict) -> list[Trade]:
-    """Defensive: walk plausible keys for the transaction list."""
+def parse_ura_json(payload: dict, project_filter: Optional[str] = None) -> list[Trade]:
+    """Defensive: walk plausible keys for the transaction list.
+
+    If ``project_filter`` is given, only rows whose ``projectName`` contains
+    it (case-insensitive) are kept.
+    """
     rows = (
         payload.get("transactionList")
         or payload.get("transactions")
         or (payload.get("result") or {}).get("transactionList")
         or []
     )
+    needle = project_filter.upper() if project_filter else None
     out: list[Trade] = []
     for r in rows:
-        if "FLORENCE" not in str(r.get("projectName", "")).upper():
+        if needle and needle not in str(r.get("projectName", "")).upper():
             continue
         area_raw = str(r.get("area") or r.get("areaSqft") or "0")
         area = int(re.sub(r"[^\d]", "", area_raw) or 0)
@@ -63,12 +70,12 @@ def parse_ura_json(payload: dict) -> list[Trade]:
     return out
 
 
-def fetch_ura() -> list[Trade]:
+def fetch_ura(condo: Condo) -> list[Trade]:
     r = requests.get(
         ENDPOINT,
-        params={"projectName": "FLORENCE RESIDENCES"},
+        params={"projectName": condo.ura_project_name},
         headers=HEADERS,
         timeout=20,
     )
     r.raise_for_status()
-    return parse_ura_json(r.json())
+    return parse_ura_json(r.json(), project_filter=condo.ura_project_name)

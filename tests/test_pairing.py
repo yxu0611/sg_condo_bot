@@ -1,6 +1,6 @@
 from datetime import date
-from florence_agent.models import Trade
-from florence_agent.pairing import classify
+from sg_condo_agent.models import Trade
+from sg_condo_agent.pairing import classify
 
 
 def _t(year, area, price, sale_type="Resale", floor="06-10"):

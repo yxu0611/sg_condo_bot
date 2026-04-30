@@ -1,6 +1,6 @@
 from datetime import date
 from pathlib import Path
-from florence_agent.fetchers.squarefoot import parse_squarefoot_html
+from sg_condo_agent.fetchers.squarefoot import parse_squarefoot_html
 
 FIXTURE = Path(__file__).parent / "fixtures" / "squarefoot_florence.html"
 

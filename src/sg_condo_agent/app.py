@@ -1,15 +1,23 @@
-"""Gradio app for the Florence Residences transaction explorer."""
+"""Gradio app — interactive transaction explorer for any registered SG condo.
+
+Run via the ``sg-condo-share`` console script. Pass ``--condo <key>`` to pick
+which project to load (defaults to ``florence``). Falls back through the
+fetcher chain just like the CLI.
+"""
 from __future__ import annotations
 
-import statistics
+import argparse
+import sys
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
 import gradio as gr
 import pandas as pd
 import plotly.express as px
 
-from .fetchers.edgeprop import fetch_edgeprop
+from .condos import Condo, get, list_keys
+from .fetchers import fetch
 from .pairing import classify
 from .render import _row_dict
 
@@ -22,8 +30,10 @@ STATUS_COLORS = {
 }
 
 
-def _load_dataframe() -> tuple[pd.DataFrame, dict]:
-    trades = fetch_edgeprop()
+def _load_dataframe(condo: Condo, source: str, csv_path: Path | None) -> tuple[pd.DataFrame, dict, str]:
+    trades, used = fetch(condo, source, csv_path)
+    if not trades:
+        raise RuntimeError(f"no trades found for {condo.name} from source={source}")
     classified = classify(trades)
     rows = [_row_dict(c) for c in classified]
     df = pd.DataFrame(rows)
@@ -60,35 +70,52 @@ def _load_dataframe() -> tuple[pd.DataFrame, dict]:
         summary["worst_unit"] = worst["unit_label"]
         summary["worst_loss"] = int(worst["gross_profit"])
         summary["worst_years"] = float(worst["holding_years"])
-    return df, summary
+    return df, summary, used
 
 
-def _conclusions_md(s: dict) -> str:
-    lines = [
-        "## 结论 / Conclusions",
+def _conclusions_md(condo: Condo, s: dict) -> str:
+    paired_total = s["profitable"] + s["unprofitable"] + s["breakeven"]
+    parts = [
+        f"## Summary — {condo.name}",
         "",
-        f"**The Florence Residences** (Hougang Ave 2, D19, 99-yr from 2018, TOP 2022) — {s['total_trades']:,} 笔 sale 成交，{s['unique_units']:,} 个独立 unit，时间跨度 {s['date_min']} → {s['date_max']}。",
+        condo.subtitle,
         "",
-        f"### 1. 二手转售盈利极强（97%+ hit rate）",
-        f"- 已配对 resale/sub-sale 共 **{s['profitable'] + s['unprofitable'] + s['breakeven']:,}** 笔，其中 **{s['profitable']:,}** 笔盈利、**{s['unprofitable']:,}** 笔亏损、{s['breakeven']:,} 笔持平。",
-        f"- **{s['hit_rate']:.1f}%** 的二手成交都是赚钱的 —— 这个比例在新加坡新盘里偏高，反映 Florence Residences 在 2019 入市价相对保守 + 2020-2025 整体房价上涨周期。",
-        f"- 中位盈利 **S${s['median_profit']:,}**，中位持有 **{s['median_holding']:.1f} 年**。",
+        f"**{s['total_trades']:,}** sale records, **{s['unique_units']:,}** distinct units, "
+        f"{s['date_min']} → {s['date_max']}.",
         "",
-        f"### 2. 总盈亏 +S${s['total_pl']:,}（gross）",
-        f"- 全部已平仓买卖 gross 累计盈余约 S${s['total_pl']/1_000_000:.1f}M，未扣 BSD / ABSD / SSD / 中介费 / 律师费。",
-        f"- 实际净盈利会比这个数字低 ~10-15% 取决于持有期和买家身份。",
+        "### Resale economics",
+        f"- Paired Resale / Sub-Sale records: **{paired_total:,}** "
+        f"(profit: {s['profitable']:,} · loss: {s['unprofitable']:,} · breakeven: {s['breakeven']:,}).",
+        f"- Hit rate: **{s['hit_rate']:.1f}%** of paired trades came out profitable.",
+        f"- Median profit **S${s['median_profit']:,}** over **{s['median_holding']:.1f}** years.",
         "",
-        f"### 3. 个案高低点",
-        f"- **盈利之最**：unit `{s.get('top_unit', '—')}`，盈 S${s.get('top_profit', 0):,}，持有 {s.get('top_years', 0):.1f} 年（年化 {s.get('top_ann', 0):.1f}%）",
-        f"- **亏损之最**：unit `{s.get('worst_unit', '—')}`，亏 S${abs(s.get('worst_loss', 0)):,}，持有 {s.get('worst_years', 0):.1f} 年",
+        "### Aggregate",
+        f"- Total gross P/L: **S${s['total_pl']:,}** (~S${s['total_pl']/1_000_000:.1f}M). "
+        "Excludes stamp duty / agent / legal.",
         "",
-        f"### 4. 注意事项",
-        f"- {s['no_prior']:,} 笔标 `no_prior` 主要是开发商的 New Sale 还没产生二次成交，**不代表数据缺失**。",
-        f"- 配对方法：以 EdgeProp 提供的真实 unit number（如 `#14-38`）作为 same-unit 判定，FIFO 配对相邻 buy/sell。",
-        f"- 数据源：EdgeProp（其底层 source = URA REALIS）；项目 asset_id = 291412。",
-        f"- P/L 是 gross。要算 net profit 需要分别按 holder 类型套 stamp duty 表。",
+        "### Notable",
     ]
-    return "\n".join(lines)
+    if "top_unit" in s:
+        parts.append(
+            f"- **Best gain**: unit `{s['top_unit']}`, +S${s['top_profit']:,}, "
+            f"held {s['top_years']:.1f} yrs (annualized {s['top_ann']:.1f}%)"
+        )
+    if "worst_unit" in s:
+        parts.append(
+            f"- **Worst loss**: unit `{s['worst_unit']}`, "
+            f"-S${abs(s['worst_loss']):,}, held {s['worst_years']:.1f} yrs"
+        )
+    parts += [
+        "",
+        "### Notes",
+        f"- {s['no_prior']:,} trades labelled `no_prior` are typically New Sale "
+        "records with no follow-on resale yet — not missing data.",
+        "- Pairing prefers the source's real unit number when available; otherwise "
+        "falls back to the URA-CSV (block, floor band, area, unit type) heuristic.",
+        "- P/L is **gross** — net profit is typically ~10-15% lower after BSD / "
+        "ABSD / SSD / agent / legal fees, depending on holder type.",
+    ]
+    return "\n".join(parts)
 
 
 def _filtered(df: pd.DataFrame, status: str, search: str) -> pd.DataFrame:
@@ -116,7 +143,7 @@ def _filtered(df: pd.DataFrame, status: str, search: str) -> pd.DataFrame:
     return out.sort_values("contract_date", ascending=False)
 
 
-def _build_scatter(df: pd.DataFrame):
+def _build_scatter(df: pd.DataFrame, title: str):
     fig = px.scatter(
         df, x="contract_date", y="psf", color="status",
         color_discrete_map=STATUS_COLORS,
@@ -126,7 +153,7 @@ def _build_scatter(df: pd.DataFrame):
             "gross_profit": ":,.0f", "status": True,
             "contract_date": False, "psf": ":,.0f",
         },
-        title="PSF over time, colored by profit status",
+        title=title,
     )
     fig.update_traces(marker=dict(size=7, line=dict(width=0.3, color="#333"), opacity=0.85))
     fig.update_layout(
@@ -136,9 +163,9 @@ def _build_scatter(df: pd.DataFrame):
     return fig
 
 
-def build_app() -> gr.Blocks:
-    df, summary = _load_dataframe()
-    scatter = _build_scatter(df)
+def build_app(condo: Condo, source: str = "auto", csv_path: Path | None = None) -> gr.Blocks:
+    df, summary, used = _load_dataframe(condo, source, csv_path)
+    scatter = _build_scatter(df, "PSF over time, colored by profit status")
 
     css = """
     .kpi { background:white; border:1px solid #e3e3e3; border-radius:8px; padding:12px 16px; }
@@ -149,11 +176,12 @@ def build_app() -> gr.Blocks:
     def kpi(label: str, value: str, color: str = "#1a1a1a") -> str:
         return f'<div class="kpi"><div class="label">{label}</div><div class="value" style="color:{color}">{value}</div></div>'
 
-    with gr.Blocks(title="Florence Residences — Transaction Report", css=css, theme=gr.themes.Soft()) as app:
+    title = f"{condo.name} — Transaction Report"
+    with gr.Blocks(title=title, css=css, theme=gr.themes.Soft()) as app:
         gr.Markdown(
-            f"# Florence Residences — Transaction Report\n"
-            f"*Hougang Ave 2 · D19 · 99-yr from 2018 · TOP 2022 · 1,410 units*  \n"
-            f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} from EdgeProp (source: URA)"
+            f"# {title}\n"
+            f"*{condo.subtitle}*  \n"
+            f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} from {used}"
         )
 
         with gr.Row():
@@ -165,7 +193,7 @@ def build_app() -> gr.Blocks:
             gr.HTML(kpi("Total gross P/L", f"S${summary['total_pl']:,}", "#0a7d2e"))
             gr.HTML(kpi("Median PSF", f"S${summary['median_psf']:,}"))
 
-        gr.Markdown(_conclusions_md(summary))
+        gr.Markdown(_conclusions_md(condo, summary))
 
         gr.Plot(scatter, label="Price per sqft over time")
 
@@ -188,20 +216,41 @@ def build_app() -> gr.Blocks:
 
         gr.Markdown(
             "---\n"
-            "*Data via EdgeProp.sg, ultimately sourced from URA REALIS. Profit/Loss "
-            "figures are **gross** — they exclude buyer's stamp duty (BSD), additional "
-            "stamp duty (ABSD), seller's stamp duty (SSD), agent commission and legal "
-            "fees. \"Same unit\" pairing uses EdgeProp's actual unit number, and matches "
-            "Resale / Sub Sale trades FIFO with the earliest unused prior trade in the "
-            "same physical unit. Past performance does not guarantee future returns; "
-            "this report is informational and not investment advice.*"
+            "*Profit/Loss figures are **gross** — they exclude buyer's stamp duty (BSD), "
+            "additional stamp duty (ABSD), seller's stamp duty (SSD), agent commission "
+            "and legal fees. \"Same unit\" pairing uses the source's actual unit number "
+            "when present, otherwise the (block, floor band, area, unit type) heuristic; "
+            "Resale / Sub-Sale trades match FIFO against the earliest unused prior trade "
+            "in the same physical unit. Past performance does not guarantee future "
+            "returns; this report is informational and not investment advice.*"
         )
     return app
 
 
-def main() -> int:
-    app = build_app()
-    app.launch(share=True, server_name="0.0.0.0", show_api=False)
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(
+        prog="sg-condo-share",
+        description="Launch a Gradio explorer for an SG condo's transactions.",
+    )
+    p.add_argument(
+        "--condo",
+        default="florence",
+        help=f"Registered condo key ({', '.join(list_keys())}) or free-form project name.",
+    )
+    p.add_argument("--source", default="auto",
+                   choices=["auto", "edgeprop", "csv", "squarefoot", "ura"])
+    p.add_argument("--csv", type=Path, default=None)
+    p.add_argument("--share", action="store_true", help="Expose a public Gradio link.")
+    p.add_argument("--server-name", default="0.0.0.0")
+    args = p.parse_args(argv)
+
+    condo = get(args.condo)
+    try:
+        app = build_app(condo, args.source, args.csv)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    app.launch(share=args.share, server_name=args.server_name, show_api=False)
     return 0
 
 

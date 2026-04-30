@@ -1,7 +1,9 @@
 import csv
 from datetime import date, datetime
 from pathlib import Path
+from typing import Optional
 
+from ..condos import Condo
 from ..models import Trade
 
 
@@ -39,13 +41,20 @@ def _get(row: dict, *keys: str) -> str:
     raise KeyError(f"none of {keys} in row")
 
 
-def load_csv(path: Path | str) -> list[Trade]:
+def load_csv(path: Path | str, condo: Optional[Condo] = None) -> list[Trade]:
+    """Load URA REALIS CSV export, keeping rows that match ``condo``.
+
+    Matching is case-insensitive substring on the ``Project Name`` column
+    against ``condo.ura_project_name``. If ``condo`` is None, every row is
+    returned.
+    """
     path = Path(path)
+    needle = condo.ura_project_name.upper() if condo is not None else None
     out: list[Trade] = []
     with path.open(newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             project = _get(row, "Project Name").upper()
-            if "FLORENCE" not in project:
+            if needle is not None and needle not in project:
                 continue
             area = _parse_area_sqft(_get(row, "Area (SQFT)", "Area (Sqft)"))
             price = _parse_price(_get(row, "Transacted Price ($)", "Price ($)"))

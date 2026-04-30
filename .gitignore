@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
+florence.html
+.edgeprop_cache.json
+ResidentialTransaction*.csv
+.DS_Store
+.claude/

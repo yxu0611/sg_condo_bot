@@ -1,0 +1,33 @@
+[project]
+name = "florence-agent"
+version = "0.1.0"
+description = "Florence Residences (SG) transaction explorer"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.31",
+  "beautifulsoup4>=4.12",
+  "gradio>=6.0",
+  "pandas>=2.0",
+  "plotly>=5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+florence-agent = "florence_agent.cli:main"
+florence-share = "florence_agent.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+florence_agent = ["template.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

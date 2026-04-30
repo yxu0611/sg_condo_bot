@@ -1,9 +1,11 @@
 """EdgeProp transaction fetcher.
 
-Calls the same backend that the EdgeProp project page uses. Cookies are
-required (Cloudflare clearance + session); the cookie string is read from
-the file pointed to by `EDGEPROP_COOKIE_FILE`. Cookies are never logged
-and never embedded in source.
+Calls the same backend that the EdgeProp project page uses. As of 2026
+the endpoint accepts unauthenticated XHRs, so a cookie is **optional** —
+the fetcher tries without first and only falls back to ``EDGEPROP_COOKIE_FILE``
+if the server returns 401/403 (i.e. Cloudflare hardens again). The cookie
+string, if used, is read from the file pointed to by ``EDGEPROP_COOKIE_FILE``
+and is never logged or embedded in source.
 
 Each transaction includes a real unit number (e.g. ``#14-38``), which lets
 us pair same-unit trades accurately rather than relying on URA's
@@ -15,6 +17,7 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,47 +33,72 @@ PAGE_LIMIT = 200
 REQUEST_DELAY_SEC = 0.4  # be polite
 
 
-def _load_cookie() -> str:
+def _load_cookie() -> Optional[str]:
+    """Return cookie string from ``EDGEPROP_COOKIE_FILE`` if set+non-empty.
+
+    Missing or empty file is *not* fatal: callers retry unauthenticated.
+    """
     path = os.environ.get("EDGEPROP_COOKIE_FILE")
     if not path:
-        raise RuntimeError(
-            "EDGEPROP_COOKIE_FILE not set. Save the Cookie header value to a "
-            "file (e.g. /tmp/edgeprop_cookie.txt) and export "
-            "EDGEPROP_COOKIE_FILE=<that path>."
-        )
-    text = Path(path).read_text().strip()
-    if not text:
-        raise RuntimeError(f"cookie file {path} is empty")
-    return text
+        return None
+    try:
+        text = Path(path).read_text().strip()
+    except OSError:
+        return None
+    return text or None
 
 
-def _request_page(condo: Condo, page: int, limit: int, cookie: str) -> dict:
+def _build_request(condo: Condo, page: int, limit: int, cookie: Optional[str]) -> urllib.request.Request:
+    referer = (
+        f"{PROJECT_REFERER_BASE}{condo.edgeprop_slug}"
+        if condo.edgeprop_slug
+        else PROJECT_REFERER_BASE
+    )
+    qs = (
+        f"option=com_mobile&task=tx&op=data&listing_type=sale"
+        f"&assetid={condo.edgeprop_asset_id}&page={page}&limit={limit}"
+    )
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/147.0.0.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+        "Referer": referer,
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    if cookie:
+        headers["Cookie"] = cookie
+    return urllib.request.Request(f"{ENDPOINT}?{qs}", headers=headers)
+
+
+def _request_page(condo: Condo, page: int, limit: int, cookie: Optional[str]) -> dict:
+    """GET one transaction page. If the unauth call is rejected, retry once
+    with cookie (loaded lazily); if still rejected, raise a helpful error.
+    """
     if not condo.edgeprop_asset_id:
         raise RuntimeError(
             f"condo '{condo.key}' has no edgeprop_asset_id — register one in condos.py "
             f"or use a different --source."
         )
-    referer = f"{PROJECT_REFERER_BASE}{condo.edgeprop_slug}" if condo.edgeprop_slug else PROJECT_REFERER_BASE
-    qs = (
-        f"option=com_mobile&task=tx&op=data&listing_type=sale"
-        f"&assetid={condo.edgeprop_asset_id}&page={page}&limit={limit}"
-    )
-    req = urllib.request.Request(
-        f"{ENDPOINT}?{qs}",
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/147.0.0.0 Safari/537.36"
-            ),
-            "Accept": "*/*",
-            "Cookie": cookie,
-            "Referer": referer,
-            "X-Requested-With": "XMLHttpRequest",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    try:
+        req = _build_request(condo, page, limit, cookie)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403) and not cookie:
+            retry_cookie = _load_cookie()
+            if retry_cookie:
+                req = _build_request(condo, page, limit, retry_cookie)
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return json.loads(r.read())
+            raise RuntimeError(
+                f"EdgeProp returned HTTP {e.code} unauthenticated. Save the Cookie "
+                "header value from your authenticated browser session to a file "
+                "and export EDGEPROP_COOKIE_FILE=<that path>; or use --source har."
+            ) from e
+        raise
 
 
 _BLOCK_RE = re.compile(r"^\s*(\w+)\s")
@@ -163,6 +191,8 @@ def fetch_edgeprop(
         rows = json.loads(cache_path.read_text())
         return parse_edgeprop_response(rows)
 
+    # Try unauthenticated first; the helper will lazily fall back to a
+    # cookie file only on 401/403.
     cookie = _load_cookie()
     all_rows: list[dict] = []
     page = 1

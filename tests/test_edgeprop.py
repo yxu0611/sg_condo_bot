@@ -1,6 +1,7 @@
 from datetime import date
+from pathlib import Path
 
-from sg_condo_agent.fetchers.edgeprop import parse_edgeprop_response
+from sg_condo_agent.fetchers.edgeprop import _load_cookie, parse_edgeprop_response
 
 
 SAMPLE = [
@@ -66,3 +67,27 @@ def test_parse_pair_key_groups_same_unit_across_floor_bands():
     same_unit = [t for t in trades if t.unit_number == "14-38"]
     assert len(same_unit) == 2
     assert same_unit[0].pair_key == same_unit[1].pair_key
+
+
+def test_load_cookie_returns_none_when_env_unset(monkeypatch):
+    monkeypatch.delenv("EDGEPROP_COOKIE_FILE", raising=False)
+    assert _load_cookie() is None
+
+
+def test_load_cookie_returns_none_for_empty_file(monkeypatch, tmp_path: Path):
+    f = tmp_path / "cookie.txt"
+    f.write_text("")
+    monkeypatch.setenv("EDGEPROP_COOKIE_FILE", str(f))
+    assert _load_cookie() is None
+
+
+def test_load_cookie_returns_text_when_file_populated(monkeypatch, tmp_path: Path):
+    f = tmp_path / "cookie.txt"
+    f.write_text("session=abc123\n")
+    monkeypatch.setenv("EDGEPROP_COOKIE_FILE", str(f))
+    assert _load_cookie() == "session=abc123"
+
+
+def test_load_cookie_returns_none_when_path_missing(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("EDGEPROP_COOKIE_FILE", str(tmp_path / "does_not_exist"))
+    assert _load_cookie() is None

@@ -8,7 +8,13 @@ from ..condos import Condo
 from ..models import Trade
 from .csv_source import _infer_unit_type
 
-PROJECT_URL_BASE = "https://www.squarefoot.com.sg/private-property/"
+# SquareFoot restructured its URL scheme over time. Try each pattern in
+# turn so a slug registered against an old layout still has a chance.
+PROJECT_URL_PATTERNS = (
+    "https://www.squarefoot.com.sg/private-property/{slug}",
+    "https://www.squarefoot.com.sg/condominium/{slug}",
+    "https://www.squarefoot.com.sg/property/{slug}",
+)
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -73,7 +79,20 @@ def fetch_squarefoot(condo: Condo) -> list[Trade]:
             f"condo '{condo.key}' has no squarefoot_slug — register one in condos.py "
             f"or use a different --source."
         )
-    url = f"{PROJECT_URL_BASE}{condo.squarefoot_slug}"
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    r.raise_for_status()
-    return parse_squarefoot_html(r.text)
+    last_err: "Exception | None" = None
+    for pattern in PROJECT_URL_PATTERNS:
+        url = pattern.format(slug=condo.squarefoot_slug)
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+        except requests.RequestException as e:
+            last_err = e
+            continue
+        trades = parse_squarefoot_html(r.text)
+        if trades:
+            return trades
+    raise RuntimeError(
+        "SquareFoot project page returned no transactions on any known URL "
+        "pattern. The site restructured its public listings in 2025; prefer "
+        "--source edgeprop or --source har."
+    ) from last_err

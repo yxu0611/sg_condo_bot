@@ -8,7 +8,16 @@ from ..condos import Condo
 from ..models import Trade
 from .csv_source import _infer_unit_type
 
-ENDPOINT = "https://www.ura.gov.sg/realEstateIIWeb/transaction/searchByProject.action"
+# Legacy public AJAX endpoints; both ``www`` and ``eservice`` subdomains
+# are tried because URA migrates services between them. As of 2026-04 the
+# whole ``realEstateIIWeb`` app has been retired in favour of the
+# pmiResidentialTransactionSearch HTML form, which gates results behind
+# SingPass — so this fetcher is best-effort and ``parse_ura_json`` is
+# the durable piece (also reused for HAR/test payloads).
+ENDPOINTS = (
+    "https://www.ura.gov.sg/realEstateIIWeb/transaction/searchByProject.action",
+    "https://eservice.ura.gov.sg/realEstateIIWeb/transaction/searchByProject.action",
+)
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -71,11 +80,30 @@ def parse_ura_json(payload: dict, project_filter: Optional[str] = None) -> list[
 
 
 def fetch_ura(condo: Condo) -> list[Trade]:
-    r = requests.get(
-        ENDPOINT,
-        params={"projectName": condo.ura_project_name},
-        headers=HEADERS,
-        timeout=20,
-    )
-    r.raise_for_status()
-    return parse_ura_json(r.json(), project_filter=condo.ura_project_name)
+    """Try each known URA AJAX host in turn.
+
+    Raises ``RuntimeError`` with a clear migration hint if none answer
+    with parseable JSON — typical now that ``realEstateIIWeb`` is retired.
+    Use ``--source csv`` (REALIS export) or ``--source har`` (saved
+    EdgeProp session) instead.
+    """
+    last_err: Optional[Exception] = None
+    for url in ENDPOINTS:
+        try:
+            r = requests.get(
+                url,
+                params={"projectName": condo.ura_project_name},
+                headers=HEADERS,
+                timeout=20,
+            )
+            r.raise_for_status()
+            return parse_ura_json(r.json(), project_filter=condo.ura_project_name)
+        except (requests.RequestException, ValueError) as e:
+            last_err = e
+            continue
+    raise RuntimeError(
+        "URA realEstateIIWeb endpoint did not return JSON from any known host. "
+        "It was retired in favour of pmiResidentialTransactionSearch (login-gated). "
+        "Use --source csv with a REALIS CSV export, or --source har with a saved "
+        "EdgeProp transactions HAR."
+    ) from last_err

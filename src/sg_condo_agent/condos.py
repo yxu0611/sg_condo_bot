@@ -55,9 +55,7 @@ REGISTRY: dict[str, Condo] = {
         key="parktown",
         name="Parktown Residence",
         ura_project_name="PARKTOWN RESIDENCE",
-        # edgeprop_asset_id: fill in after grabbing it from the EdgeProp
-        # project page URL (it appears as /m_<id> in the address bar).
-        edgeprop_asset_id=None,
+        edgeprop_asset_id=295529,
         edgeprop_slug="Parktown-Residence",
         squarefoot_slug=None,
         location="Tampines Street 62",

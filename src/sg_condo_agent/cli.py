@@ -24,10 +24,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--source",
-        choices=["auto", "edgeprop", "csv", "squarefoot", "ura"],
+        choices=["auto", "edgeprop", "har", "csv", "squarefoot", "ura"],
         default="auto",
     )
     p.add_argument("--csv", type=Path, help="Path to URA REALIS CSV export")
+    p.add_argument(
+        "--har",
+        type=Path,
+        help=(
+            "Path to a Chrome DevTools HAR export. The fetcher reads the "
+            "captured EdgeProp transaction responses out of the HAR — no "
+            "cookie file needed. Auto-detects partial coverage."
+        ),
+    )
     p.add_argument(
         "--out",
         type=Path,
@@ -39,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     condo = get(args.condo)
     out_path = args.out or Path(f"{condo.key}.html")
 
-    trades, used = fetch(condo, args.source, args.csv)
+    trades, used = fetch(condo, args.source, args.csv, args.har)
     if not trades:
         print(
             f"no trades found for condo={condo.name!r} from source={args.source}",

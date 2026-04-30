@@ -5,6 +5,8 @@ __pycache__/
 build/
 dist/
 *.html
+*.har
+!tests/fixtures/*.har
 .edgeprop_cache_*.json
 ResidentialTransaction*.csv
 .DS_Store

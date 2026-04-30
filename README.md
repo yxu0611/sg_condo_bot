@@ -47,14 +47,34 @@ sg-condo-agent --condo florence --source edgeprop
 sg-condo-agent --condo florence --source ura
 sg-condo-agent --condo florence --source squarefoot
 
+# From a Chrome DevTools HAR capture (no cookie file needed):
+sg-condo-agent --condo parktown --source har --har ./edgeprop.har
+
 # Ad-hoc by name (URA / CSV sources will work; EdgeProp / SquareFoot need
 # slugs registered in condos.py):
 sg-condo-agent --condo "Treasure At Tampines" --source ura
 ```
 
-`--source auto` tries: `edgeprop → csv → squarefoot → ura`, skipping any
-sources the chosen condo lacks configuration for. Output defaults to
-`<condo-key>.html`; override with `--out`.
+`--source auto` tries: `har → edgeprop → csv → squarefoot → ura`, skipping
+any sources whose inputs aren't supplied (no `--har`, no `edgeprop_asset_id`,
+etc.). Output defaults to `<condo-key>.html`; override with `--out`.
+
+### HAR source workflow (no cookies)
+
+EdgeProp blocks unauthenticated automated traffic, so the live `edgeprop`
+fetcher needs `EDGEPROP_COOKIE_FILE`. The `har` source side-steps this by
+parsing transaction responses directly from a Chrome DevTools capture:
+
+1. Open the project page on edgeprop.sg in Chrome.
+2. DevTools → Network → click the project's "View all transactions"
+   button, scroll / paginate until **every** row is loaded (each page is one
+   `task=tx` XHR).
+3. Right-click any row in the network panel → **Save all as HAR with
+   content**.
+4. `sg-condo-agent --condo <key> --source har --har <path>`.
+
+If the HAR only captured part of the rows, the fetcher prints a coverage
+warning so you know to scroll further and re-save.
 
 ### Interactive Gradio app
 

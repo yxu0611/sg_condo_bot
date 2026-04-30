@@ -9,17 +9,21 @@ def fetch(
     condo: Condo,
     source: str,
     csv_path: Optional[Path] = None,
+    har_path: Optional[Path] = None,
 ) -> tuple[list[Trade], str]:
-    """Returns (trades, source_used). 'auto' tries edgeprop → csv → squarefoot → ura.
+    """Returns (trades, source_used).
+
+    'auto' tries: har (if har_path given) → edgeprop → csv → squarefoot → ura.
 
     Sources that the condo lacks configuration for (no edgeprop_asset_id, no
     squarefoot_slug) are skipped silently in 'auto' mode and raise a clear
     error in pinned mode.
     """
     order = {
-        "auto": ["edgeprop", "csv", "squarefoot", "ura"],
+        "auto": ["har", "edgeprop", "csv", "squarefoot", "ura"],
         "edgeprop": ["edgeprop"],
         "csv": ["csv"],
+        "har": ["har"],
         "squarefoot": ["squarefoot"],
         "ura": ["ura"],
     }[source]
@@ -32,6 +36,11 @@ def fetch(
                     continue
                 from .csv_source import load_csv
                 trades = load_csv(csv_path, condo)
+            elif src == "har":
+                if har_path is None:
+                    continue
+                from .har import fetch_har
+                trades = fetch_har(har_path, condo)
             elif src == "edgeprop":
                 if source == "auto" and not condo.edgeprop_asset_id:
                     continue

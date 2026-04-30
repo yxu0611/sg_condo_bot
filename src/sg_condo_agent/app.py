@@ -30,8 +30,8 @@ STATUS_COLORS = {
 }
 
 
-def _load_dataframe(condo: Condo, source: str, csv_path: Path | None) -> tuple[pd.DataFrame, dict, str]:
-    trades, used = fetch(condo, source, csv_path)
+def _load_dataframe(condo: Condo, source: str, csv_path: Path | None, har_path: Path | None = None) -> tuple[pd.DataFrame, dict, str]:
+    trades, used = fetch(condo, source, csv_path, har_path)
     if not trades:
         raise RuntimeError(f"no trades found for {condo.name} from source={source}")
     classified = classify(trades)
@@ -163,8 +163,9 @@ def _build_scatter(df: pd.DataFrame, title: str):
     return fig
 
 
-def build_app(condo: Condo, source: str = "auto", csv_path: Path | None = None) -> gr.Blocks:
-    df, summary, used = _load_dataframe(condo, source, csv_path)
+def build_app(condo: Condo, source: str = "auto", csv_path: Path | None = None,
+              har_path: Path | None = None) -> gr.Blocks:
+    df, summary, used = _load_dataframe(condo, source, csv_path, har_path)
     scatter = _build_scatter(df, "PSF over time, colored by profit status")
 
     css = """
@@ -238,15 +239,17 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Registered condo key ({', '.join(list_keys())}) or free-form project name.",
     )
     p.add_argument("--source", default="auto",
-                   choices=["auto", "edgeprop", "csv", "squarefoot", "ura"])
+                   choices=["auto", "edgeprop", "har", "csv", "squarefoot", "ura"])
     p.add_argument("--csv", type=Path, default=None)
+    p.add_argument("--har", type=Path, default=None,
+                   help="Chrome DevTools HAR export with EdgeProp transaction calls captured.")
     p.add_argument("--share", action="store_true", help="Expose a public Gradio link.")
     p.add_argument("--server-name", default="0.0.0.0")
     args = p.parse_args(argv)
 
     condo = get(args.condo)
     try:
-        app = build_app(condo, args.source, args.csv)
+        app = build_app(condo, args.source, args.csv, args.har)
     except RuntimeError as e:
         print(str(e), file=sys.stderr)
         return 2

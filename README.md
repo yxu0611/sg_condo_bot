@@ -11,7 +11,7 @@ trades, and render either a static HTML report or an interactive Gradio app.
 
 ## Features
 
-- **Multi-source fetchers** with auto-fallback: EdgeProp → CSV → SquareFoot → URA REALIS.
+- **Multi-source fetchers** with auto-fallback: HAR → EdgeProp → CSV → SquareFoot → URA REALIS.
 - **Same-unit pairing** — uses real unit numbers (e.g. `#14-38`) when the
   source provides them; otherwise falls back to a `(block, floor band, area,
   unit type)` heuristic. FIFO matches each Resale / Sub-Sale against the
@@ -59,11 +59,27 @@ sg-condo-agent --condo "Treasure At Tampines" --source ura
 any sources whose inputs aren't supplied (no `--har`, no `edgeprop_asset_id`,
 etc.). Output defaults to `<condo-key>.html`; override with `--out`.
 
+## Source status (2026-04)
+
+| Source | Status | Notes |
+|---|---|---|
+| `edgeprop` | ✅ live | unauthenticated XHRs work; `EDGEPROP_COOKIE_FILE` is **optional**, used only as fallback if EdgeProp 401/403s |
+| `har` | ✅ offline | preferred when you can't reach the live API |
+| `csv` | ✅ offline | URA REALIS CSV exports |
+| `squarefoot` | ⚠️ best-effort | site restructured 2025; fetcher walks multiple URL patterns then errors clearly |
+| `ura` | ⚠️ best-effort | `realEstateIIWeb` retired in favour of `pmiResidentialTransactionSearch` (login-gated); fetcher errors with a migration hint |
+
+### EdgeProp cookie fallback (optional)
+
+If EdgeProp ever hardens again and unauthenticated calls return 401/403,
+save the `Cookie` header value from your authenticated browser session
+to a file and export `EDGEPROP_COOKIE_FILE=<path>`. The fetcher will
+auto-retry with that cookie.
+
 ### HAR source workflow (no cookies)
 
-EdgeProp blocks unauthenticated automated traffic, so the live `edgeprop`
-fetcher needs `EDGEPROP_COOKIE_FILE`. The `har` source side-steps this by
-parsing transaction responses directly from a Chrome DevTools capture:
+The `har` source bypasses any live-traffic surprise by parsing transaction
+responses directly from a Chrome DevTools capture:
 
 1. Open the project page on edgeprop.sg in Chrome.
 2. DevTools → Network → click the project's "View all transactions"

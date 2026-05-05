@@ -162,3 +162,5 @@ pytest -v
 - [URA REALIS](https://www.ura.gov.sg/realis) — official Singapore land
   authority transactions database.
 - [SquareFoot](https://www.squarefoot.com.sg/) — fallback HTML source.
+
+> Remark: This file was modified from a mobile phone using Claude Code.
